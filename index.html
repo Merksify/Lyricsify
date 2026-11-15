@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Lyrics</title>
+<style>
+:root{--bg:#14121a;--text:#5e5a6e;--active:#fff1dc;--size:28px;--font:"Segoe UI Variable Display","Segoe UI",sans-serif;--align:left}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+#head{position:fixed;top:0;left:0;right:0;padding:16px 22px 28px;background:linear-gradient(var(--bg) 60%,transparent);z-index:2;display:flex;justify-content:space-between;gap:12px}
+#title{font-weight:600;color:var(--active);font-size:15px}
+#artist{font-size:13px}
+#gear{background:none;border:1px solid var(--text);color:var(--text);border-radius:6px;padding:4px 10px;cursor:pointer;height:28px}
+#gear:focus-visible{outline:2px solid var(--active)}
+#scroll{position:absolute;inset:0;overflow-y:auto;padding:30vh 22px;scrollbar-width:none;scroll-behavior:smooth}
+.line{font-size:var(--size);font-weight:700;line-height:1.25;margin:0 0 .6em;text-align:var(--align);transition:color .3s,opacity .3s;opacity:.55}
+.line.active{color:var(--active);opacity:1}
+.plain{font-size:18px;line-height:1.6;white-space:pre-wrap;text-align:var(--align)}
+#msg{padding:0 22px;font-size:18px}
+#panel{position:fixed;inset:0;background:var(--bg);z-index:3;padding:20px;display:none;flex-direction:column;gap:10px}
+#panel.open{display:flex}
+#panel h2{margin:0;color:var(--active);font-size:18px}
+#panel p{margin:0;font-size:13px}
+textarea{flex:1;background:#0d0c12;color:var(--active);border:1px solid var(--text);border-radius:6px;padding:10px;font:13px Consolas,monospace;resize:none}
+.row{display:flex;gap:10px;align-items:center}
+button.p{background:var(--active);color:var(--bg);border:0;border-radius:6px;padding:8px 16px;font-weight:600;cursor:pointer}
+input[type=number]{width:90px;background:#0d0c12;color:var(--active);border:1px solid var(--text);border-radius:6px;padding:6px}
+</style><style id="user"></style></head>
+<body>
+<div id="head"><div><div id="title">Nothing playing</div><div id="artist">Play a song in Spotify</div></div><button id="gear">Settings</button></div>
+<div id="scroll"><div id="msg"></div><div id="lines"></div></div>
+<div id="panel">
+  <h2>Custom CSS</h2>
+  <p>Style anything: change the variables, or target <code>.line</code>, <code>.line.active</code>, <code>#title</code>, <code>#scroll</code>.</p>
+  <textarea id="css" spellcheck="false" placeholder=":root{ --bg:#0b1020; --active:#7fdcff; --size:34px; --align:center; }&#10;.line.active{ text-shadow:0 0 14px #7fdcff; }"></textarea>
+  <div class="row"><label for="off">Lyrics timing (ms)</label><input id="off" type="number" step="100" value="0"><span>Positive = lyrics appear earlier.</span></div>
+  <div class="row"><button class="p" id="save">Save changes</button><button id="close" class="p" style="background:none;color:var(--active);border:1px solid var(--text)">Close</button></div>
+</div>
+<script>
+const $=id=>document.getElementById(id);
+let lines=[],key="",active=-1,offset=0;
+try{offset=+localStorage.getItem("off")||0;$("off").value=offset}catch(e){}
+const parse=t=>t.split("\n").flatMap(l=>{
+  const m=[...l.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)],s=l.replace(/\[[^\]]*\]/g,"").trim();
+  return m.map(x=>({t:(+x[1]*60+ +x[2])*1000,s}));}).sort((a,b)=>a.t-b.t);
+function render(s){
+  const box=$("lines");box.innerHTML="";active=-1;$("msg").textContent="";
+  if(s.synced){lines=parse(s.synced);lines.forEach(l=>{const d=document.createElement("div");d.className="line";d.textContent=l.s||"♪";l.el=d;box.appendChild(d)})}
+  else{lines=[];if(s.plain){const d=document.createElement("div");d.className="plain";d.textContent=s.plain;box.appendChild(d)}else $("msg").textContent="Finding lyrics…"}
+}
+async function tick(){
+  try{
+    const s=await pywebview.api.status();
+    if(s.error){$("msg").textContent=s.error;return}
+    $("title").textContent=s.title||"Nothing playing";
+    $("artist").textContent=s.artist||"Play a song in Spotify";
+    const k=s.title+"|"+s.artist+"|"+(s.synced?1:0)+(s.plain?1:0);
+    if(k!==key){key=k;render(s)}
+    if(lines.length){
+      const p=s.pos_ms+offset;let i=-1;
+      for(let j=0;j<lines.length;j++){if(lines[j].t<=p)i=j;else break}
+      if(i!==active){
+        if(active>=0)lines[active].el.classList.remove("active");
+        active=i;
+        if(i>=0){const e=lines[i].el;e.classList.add("active");
+          $("scroll").scrollTo({top:e.offsetTop-$("scroll").clientHeight/2+e.offsetHeight/2+0});}
+      }
+    }
+  }catch(e){}
+}
+async function init(){
+  $("user").textContent=await pywebview.api.get_css();$("css").value=$("user").textContent;
+  setInterval(tick,250);
+}
+$("gear").onclick=()=>$("panel").classList.add("open");
+$("close").onclick=()=>$("panel").classList.remove("open");
+$("css").oninput=()=>$("user").textContent=$("css").value;
+$("save").onclick=async()=>{
+  offset=+$("off").value||0;try{localStorage.setItem("off",offset)}catch(e){}
+  await pywebview.api.save_css($("css").value);$("save").textContent="Saved";setTimeout(()=>$("save").textContent="Save changes",1200);
+};
+window.addEventListener("pywebviewready",init);
+</script></body></html>
